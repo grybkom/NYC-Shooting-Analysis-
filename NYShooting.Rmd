@@ -1,0 +1,359 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "Michael Grybko"
+date: "2024-02-05"
+output: pdf_document
+---
+
+# Introduction
+This project will analyze the NYPD Shooting Incident Data (Historic). This is a record of the shootings that have occurred in New York City from 2006 through April 27, 2023.  This data includes information about the victim, the perpetrator if known, and incident location. The focus of this research will be to examine the variables associated with shootings that resulted in murder. The data set used in this project is available through DATA.GOV at https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+```{r, libraries, echo=FALSE}
+library(tidyverse)
+library(lubridate)
+library(writexl)
+```
+
+# Read in data
+
+```{r, GetData, echo = FALSE}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+shooting_data <- read_csv(url_in)
+
+```
+
+# Clean Data
+Both date and time need to be correctly formatted, and unnecessary variables related to location and specific incident identification will be removed. The variable STATISTICAL_MURDER_FLAG, which indicates which shootings resulted in the victim’s death and are counted as murder, will be converted to a binary variable. 1 will indicate flagged for murder and 0 will indicate not flagged for murder.  
+```{r, TidyData, echo=TRUE}
+shooting_data <- shooting_data %>% 
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>% 
+  mutate(OCCUR_TIME = as.POSIXct(OCCUR_TIME,
+                                          format = "%H:%M:%S")) %>% 
+  select(-c(X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat, LOC_OF_OCCUR_DESC, LOCATION_DESC,LOC_CLASSFCTN_DESC, JURISDICTION_CODE, INCIDENT_KEY))
+
+#transform variable STATISTICAL_MURDER_FLAG to binary 0 and 1
+shooting_data$STATISTICAL_MURDER_FLAG <- ifelse(shooting_data$STATISTICAL_MURDER_FLAG == TRUE, 1, 0)
+# change variables to factors
+shooting_data$STATISTICAL_MURDER_FLAG <- factor(shooting_data$STATISTICAL_MURDER_FLAG)
+
+shooting_data$VIC_RACE <- factor(shooting_data$VIC_RACE)
+
+shooting_data$VIC_AGE_GROUP <- factor(shooting_data$VIC_AGE_GROUP)
+
+summary(shooting_data)
+```
+
+## Missing Data
+There are some missing data entries that need to be addressed. Some of these entries related to perpetrator are not filled in at all and some contain the UNKOWN or U.
+```{r, missing_data_exploration, echo=FALSE}
+# Count missing values in PERP_AGE_GROUP, PERP_SEX and PERP_RACE
+missing_PERP_AGE_GROUP <- sum(shooting_data$PERP_AGE_GROUP == "" 
+                              |shooting_data$PERP_AGE_GROUP ==  "(null)"
+                              | shooting_data$PERP_AGE_GROUP == "NA")
+missing_PERP_SEX <- sum(shooting_data$PERP_SEX == ""|
+                         shooting_data$PERP_SEX ==  "(null)")
+
+missing_PERP_RACE <- sum(shooting_data$PERP_RACE == "" 
+                         |shooting_data$PERP_RACE ==  "(null)")
+
+cat("Missing values in PERP_AGE_GROUP:", missing_PERP_AGE_GROUP, "\n")
+cat("Missing values in PERP_SEX:", missing_PERP_SEX, "\n")
+cat("Missing values in PERP_RACE:", missing_PERP_RACE, "\n")
+
+unknown_PERP_AGE_GROUP <- sum(shooting_data$PERP_AGE_GROUP == "UNKNOWN")
+unknown_PERP_SEX <- sum(shooting_data$PERP_SEX == "U")
+unknown_PERP_RACE <- sum(shooting_data$PERP_RACE == "UNKNOWN")
+cat("PERP_AGE_GROUP labeled UNKOWN:", unknown_PERP_AGE_GROUP, "\n")
+cat("PERP_SEX labeled U:", unknown_PERP_SEX, "\n")
+cat("PERP_RACE labeled UNKOWN:", unknown_PERP_RACE, "\n")
+```
+## Handeling Missing Data
+Empty data cells or cells containing(null), for the variables related to perpetrator will be filled in with UNKNOWN, and for consistency the entries of U for the variable PERP_SEX will be converted to UNKNOWN. Entries of UNKNOWN will not be imputed for the variables related to perpetrator because it is unclear what they should be imputed to. For example, some of these may indicate the perpetrator was never seen and/or caught, which may be of statistical importance as is, while other shootings may be self-inflected. Since there is only one instance each of "1020", "940", and "224" in the variable PER_AGE_GROUP they will be dropped. Shooting incidents that include entries of UNKNOWN for VIC_RACE and VIC_AGE_GROUP will be dropped. There are relatively few of these entries (66 and 61) and dropping them should not impact statistical analysis and modeling. VIC_AGE_GROUP also contains one entry of 1022 that will be removed. There are only a few instances with the gender of the victim is "U", so they will be dropped.  
+
+```{r, correct_missing_data, echo=TRUE}
+shooting_data <- shooting_data %>% 
+  mutate(PERP_AGE_GROUP = ifelse(PERP_AGE_GROUP == "", "UNKNOWN", PERP_AGE_GROUP),
+         PERP_AGE_GROUP = ifelse(PERP_AGE_GROUP == "(null)", "UNKNOWN", PERP_AGE_GROUP),
+         PERP_RACE = ifelse(PERP_RACE == "", "UNKNOWN", PERP_RACE),
+         PERP_RACE = ifelse(PERP_RACE == "(null)", "UNKNOWN", PERP_RACE),
+         PERP_SEX = ifelse(PERP_SEX == "U", "UNKNOWN", ifelse(PERP_SEX == "", "UNKNOWN", PERP_SEX)),
+         PERP_SEX = ifelse(PERP_SEX == "(null)", "UNKNOWN", PERP_SEX)) %>%
+  filter(VIC_RACE != "UNKNOWN" & VIC_AGE_GROUP != "UNKNOWN" & VIC_AGE_GROUP != "1022" & PERP_AGE_GROUP != "1020"
+         & PERP_AGE_GROUP != "224" & PERP_AGE_GROUP != "940" 
+         & VIC_SEX != "U")
+
+shooting_data$VIC_RACE <- factor(shooting_data$VIC_RACE, exclude = "UNKNOWN")
+
+shooting_data$VIC_AGE_GROUP <- factor(shooting_data$VIC_AGE_GROUP, exclude = "UNKNOWN")
+
+shooting_data$VIC_AGE_GROUP <- factor(shooting_data$VIC_AGE_GROUP, exclude = "1022")
+
+shooting_data$VIC_SEX <- factor(shooting_data$VIC_SEX, exclude = "U")
+
+shooting_data$PERP_AGE_GROUP <- factor(shooting_data$PERP_AGE_GROUP, exclude = c("1020", "224", "940"))
+
+summary_data <- summary(shooting_data) 
+summary_data <- as.data.frame(summary_data)
+
+excel_file <- "/Users/michaelgrybko/Desktop/MSDS/DataScienceAsaField/Week5/summary_shooting_data.xlsx"
+write_xlsx(list(summary_data = summary_data), excel_file)
+```
+
+# Data Exploration
+
+## Graphs Showing Relationship of Shootings and Time
+
+```{r, shootings_by_hour, echo=FALSE}
+# shootings by hour
+shooting_data$hour <- format(shooting_data$OCCUR_TIME, "%H")
+
+# Bar Plot
+
+ggplot(shooting_data, aes(x = hour)) +
+  geom_bar(fill = "slateblue4", color = "black") +
+  labs(title = "Shootings by Time of Day",
+       x = "Hour",
+       y = "Shootings") +
+  theme_minimal()
+
+```
+
+```{r, shootings_by_month, echo=FALSE}
+# shootings by month
+shooting_data$month <- format(shooting_data$OCCUR_DATE, "%m")
+
+# Bar Plot
+ggplot(shooting_data, aes(x = month)) +
+  geom_bar(fill = "slateblue4", color = "black") +
+  labs(title = "Shootings by Month",
+       x = "Month",
+       y = "Shootings") +
+  scale_x_discrete(labels = month.abb) +
+  theme_minimal()
+```
+
+```{r, shootings_murders_by_year, echo=FALSE}
+
+shooting_data$year <- factor(format(shooting_data$OCCUR_DATE, "%Y"))
+
+# total shootings by year
+total_shootings <- shooting_data %>%
+  group_by(year) %>%
+  summarise(total = n())
+
+# total shootings flagged for murder by year
+murder_shootings <- shooting_data %>%
+  filter(STATISTICAL_MURDER_FLAG == 1) %>%
+  group_by(year) %>%
+  summarise(murder_total = n())
+
+# Merge data sets
+shootings_murders_by_year <- merge(total_shootings, murder_shootings, by = "year", all = TRUE)
+
+# split bar plot
+
+ggplot(shootings_murders_by_year, aes(x = year)) +
+  geom_bar(aes(y = total, fill = "Total Shootings"), stat = "identity", color = "black") +
+  geom_bar(aes(y = murder_total, fill = "Flagged for Murder"), stat = "identity", color = "black") +
+  labs(title = "Shootings by Year",
+       x = "Year",
+       y = "Shootings",
+       fill = "Category") +
+  scale_fill_manual(values = c("Total Shootings" = "slateblue4", "Flagged for Murder" = "firebrick2")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r, murder_percentage_by_year, echo=FALSE}
+shooting_counts <- shooting_data %>%
+  group_by(year, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot
+ggplot(shooting_counts, aes(x = year, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Year",
+       x = "Year",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("slateblue4", "firebrick2"), labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r, murder_counts}
+# Plot histogram
+ggplot(shooting_data, aes(x = STATISTICAL_MURDER_FLAG, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar() +
+  labs(title = "Shootings Resulting in Murder",
+       x = "Flagged for Murder",
+       y = "Count") +
+  scale_fill_manual(values = c("slateblue4", "firebrick2"), labels = c("Not Murder", "Murder")) +
+  theme_minimal()
+
+```
+
+
+## Graphs Showing Relationship of Shootings and Boroughs
+```{r, shootings_by_boro, echo=FALSE}
+
+ggplot(shooting_data, aes(x = BORO, fill = BORO)) +
+  geom_bar() +
+  scale_fill_manual(values = c("darkolivegreen", "slateblue4", "firebrick4", "#d62728", "chartreuse3")) +
+  labs(title = "Shootings by NYC Borough",
+       x = "Borough",
+       y = "Shootings") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(fill = FALSE)
+  
+```
+
+```{r, murder_percentage_by_boros, echo=FALSE}
+shooting_counts_boro <- shooting_data %>%
+  group_by(BORO, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot
+ggplot(shooting_counts_boro, aes(x = BORO, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Borough",
+       x = "Borough",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("darkgreen", "firebrick2"),    labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Relationship of Shootings and Attributes of Victims
+
+These plots use data normalized showing the murder rate as a percentage of total shootings. 
+```{r, murder_percentage_by_vic_race, echo=FALSE}
+shooting_counts_race <- shooting_data %>%
+  group_by(VIC_RACE, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot 
+ggplot(shooting_counts_race, aes(x = VIC_RACE, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Race of Victim",
+       x = "Race",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("darkgreen", "firebrick2"),    labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+
+```
+
+```{r, murder_percentage_vic_gender, echo=FALSE}
+shooting_counts_sex <- shooting_data %>%
+  group_by(VIC_SEX, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot
+ggplot(shooting_counts_sex, aes(x = VIC_SEX, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Gender of Victim",
+       x = "Borough",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("darkgreen", "firebrick2"),    labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Relationship of Shootings and Attributes of Perpetrators
+
+These plots use data normalized showing the murder rate as a percentage of total shootings.
+```{r, murder_percentage_by_vic_age, echo=FALSE}
+shooting_counts_age <- shooting_data %>%
+  group_by(VIC_AGE_GROUP, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot 
+ggplot(shooting_counts_age, aes(x = VIC_AGE_GROUP, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Age of Victim",
+       x = "Age",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("darkgreen", "firebrick2"),    labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+```
+```{r, murder_percentage_by_perp_race, echo=FALSE}
+shooting_counts_perp_race <- shooting_data %>%
+  group_by(PERP_RACE, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot 
+ggplot(shooting_counts_perp_race, aes(x = PERP_RACE, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Race of Perp",
+       x = "Race",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("darkgreen", "firebrick2"),    labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+
+```
+```{r, murder_percentage_by_perp_age, echo=FALSE}
+shooting_counts_perp_age <- shooting_data %>%
+  group_by(PERP_AGE_GROUP, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n())
+
+# Bar Plot 
+ggplot(shooting_counts_perp_age, aes(x = PERP_AGE_GROUP, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(title = "Proportion of Murders by Age of Perp",
+       x = "Race",
+       y = "Proportion",
+       fill = "Flagged for Murder") +
+  scale_fill_manual(values = c("darkgreen", "firebrick2"),    labels = c("Not Murder", "Flagged for Murder")) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+
+```
+
+# Statistical Analysis and Models
+
+## Full Logistical Regression Model
+Here the response variable is STATISTICAL_MURDER_FLAG, which has been converted to a binary factor with 1 indicating a shooting that has been flagged for murder and 0 a shooting that did not result in murder. The first model is a full logistical regression model including all predictors. 
+```{r, log_reg_model_all}
+log_reg_mod_all <- glm(STATISTICAL_MURDER_FLAG ~ ., data = shooting_data, family = "binomial")
+summary(log_reg_mod_all)
+
+```
+
+## Reduced Logistical Regression Model
+The second model is a reduced logistical regression model. STATISTICAL_MURDER_FLAG is still the response variable, however only the predictor variables with significant p-values in the full model were included. 
+```{r, log_reg_model_red}
+log_reg_mod_red <- glm(STATISTICAL_MURDER_FLAG ~ VIC_AGE_GROUP + PERP_AGE_GROUP + PERP_SEX + hour, data = shooting_data, family = "binomial")
+summary(log_reg_mod_red)
+```
+
+# Exploration of Bias and Conclusion 
+It is very important to be cognizant of the potential for bias to impact the analysis of data such as this. There can be bias in the collection and formatting of the data before it is analyzed, and the cleaning and modeling of the data can be impacted by personal bias. One reason for this is because this dataset is documenting violent crime, which can be an emotional topic. Also, in the United States the topic of gun ownership is very contentious. Some believe gun ownership is a fundamental right of an American citizen, while others believe stricter limits on gun ownership need to be put into place to help prevent violent crime. 
+
+The variable STATISTICAL_MURDER_FLAG could be an indication of bias in this dataset. This factor only documents shootings that resulted in murder, however there was no information about other causes of shootings. For instance, were any of these shootings defensive, accidental, self-inflicted or police related? By only flagging murders and not including other reasons for shootings we are inclined to interpret this data in a certain way, introducing a bias. This is part of my reasoning behind not imputing or removing shooting instances when there was missing data for the perpetrator. I do not know how to interpret an “UNKNOWN” perpetrator. I am generally in favor of stricter gun laws, and I could have introduced bias into the data by trying to impute missing data in attributes associated with the perpetrator.
+
+I found it interesting that in both logistical regression models the age of both the victim and the perpetrator were statistically significant when examining which shootings were flagged as murders. There were not very many other impactful attributes. Certain hours of the day had some significance. The only other factors that stood out as statistically significant were PERP_SEX “UNKNOWN” and PERP_AGE_GROUP “UNKNOWN”, with PERP_SEX “UNKNOWN” having a positive correlation and PERP_AGE_GROUP “UNKNOWN” having a negative correlation. This could be an interesting avenue for further exploration.  
+
+# Session Information
+```{r, sessionInfo}
+sessionInfo()
+```
+
+

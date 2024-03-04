@@ -102,8 +102,6 @@ shooting_data$PERP_AGE_GROUP <- factor(shooting_data$PERP_AGE_GROUP, exclude = c
 summary_data <- summary(shooting_data) 
 summary_data <- as.data.frame(summary_data)
 
-excel_file <- "/Users/michaelgrybko/Desktop/MSDS/DataScienceAsaField/Week5/summary_shooting_data.xlsx"
-write_xlsx(list(summary_data = summary_data), excel_file)
 ```
 
 # Data Exploration

@@ -12,7 +12,7 @@ This research will analyze the NYPD Shooting Incident Data (Historic). This is a
 - **Data**
   - The data set used in this project is available through DATA.GOV at https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic.
     
--**Language**
+- **Language**
   -  R
   -  [tidyverse](https://www.tidyverse.org/)
   -  [ggplot2](https://ggplot2.tidyverse.org/)

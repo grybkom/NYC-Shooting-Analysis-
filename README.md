@@ -11,6 +11,7 @@ This research will analyze the NYPD Shooting Incident Data (Historic). This is a
 ### Data and Methods
 - **Data**
   - The data set used in this project is available through DATA.GOV at https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic.
+    
 -**Language**
   -  R
   -  [tidyverse](https://www.tidyverse.org/)

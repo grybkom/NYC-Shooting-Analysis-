@@ -14,6 +14,7 @@ This research will analyze the NYPD Shooting Incident Data (Historic). This is a
 -**Language**
   -  R
   -  [tidyverse](https://www.tidyverse.org/)
+  -  [ggplot2](https://ggplot2.tidyverse.org/)
 
 ### Visualizations
 ![plot_murders_by_year](https://github.com/user-attachments/assets/73328e05-a5c9-4c1c-88ca-73ab4e92f65c)
